@@ -1,103 +1,169 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
+
+// Novos componentes da interface renovada
+import LoadingAnimation from './components/LoadingAnimation';
+import DashboardHeader from './components/DashboardHeader';
+import NavigationSidebar from './components/NavigationSidebar';
+import StreamingModule from './components/StreamingModule';
+import CommandsModule from './components/CommandsModule';
+import EquipmentsModule from './components/EquipmentsModule';
+import AlertsModule from './components/AlertsModule';
+import RawDataModule from './components/RawDataModule';
+
+export default function HomePage() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('streaming');
+  const [currentTime, setCurrentTime] = useState('');
+  const [activeIMEI, setActiveIMEI] = useState('864993060259554');
+  const [imeiStats, setImeiStats] = useState<any>(null);
+  const [activeEquipment, setActiveEquipment] = useState<any>(null);
+
+  // Atualizar hora a cada segundo
+  useEffect(() => {
+    const updateTime = () => {
+      setCurrentTime(new Date().toLocaleString('pt-BR'));
+    };
+    
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Buscar equipamento ativo
+  useEffect(() => {
+    const fetchActiveEquipment = async () => {
+      try {
+        const response = await fetch('http://localhost:3002/api/equipments/active');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.data) {
+            setActiveEquipment(result.data.equipment);
+            setActiveIMEI(result.data.equipment.imei);
+            setImeiStats(result.data.stats);
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao buscar equipamento ativo:', error);
+      }
+    };
+
+    fetchActiveEquipment();
+    const interval = setInterval(fetchActiveEquipment, 30000); // Atualizar a cada 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  // Buscar estatísticas do IMEI ativo
+  useEffect(() => {
+    const fetchStats = async () => {
+      if (!activeIMEI) return;
+      
+      try {
+        const response = await fetch(`http://localhost:3002/api/device/${activeIMEI}/stats`);
+        if (response.ok) {
+          const result = await response.json();
+          setImeiStats(result.data);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar estatísticas:', error);
+      }
+    };
+
+    if (activeIMEI && !isLoading) {
+      fetchStats();
+      const interval = setInterval(fetchStats, 30000); // Atualizar a cada 30s
+      return () => clearInterval(interval);
+    }
+  }, [activeIMEI, isLoading]);
+
+  const handleLoadingComplete = () => {
+    setIsLoading(false);
+  };
+
+  const renderActiveModule = () => {
+    switch (activeTab) {
+      case 'streaming':
+        return <StreamingModule activeIMEI={activeIMEI} />;
+      case 'commands':
+        return <CommandsModule activeIMEI={activeIMEI} />;
+      case 'equipments':
+        return (
+          <EquipmentsModule 
+            onEquipmentActivated={(equipment: any) => {
+              setActiveIMEI(equipment.imei);
+              setActiveEquipment(equipment);
+              toast.success(`Equipamento ${equipment.name} ativado com sucesso!`);
+            }}
+          />
+        );
+      case 'alerts':
+        return <AlertsModule activeIMEI={activeIMEI} />;
+      case 'rawdata':
+        return <RawDataModule activeIMEI={activeIMEI} />;
+      default:
+        return <StreamingModule activeIMEI={activeIMEI} />;
+    }
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <>
+      <AnimatePresence>
+        {isLoading && (
+          <LoadingAnimation onComplete={handleLoadingComplete} />
+        )}
+      </AnimatePresence>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+      <AnimatePresence>
+        {!isLoading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8 }}
+            className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+            <div className="container mx-auto px-6 py-6">
+              {/* Header Dashboard */}
+              <DashboardHeader 
+                activeIMEI={activeIMEI}
+                imeiStats={imeiStats}
+                currentTime={currentTime}
+                activeEquipment={activeEquipment}
+              />
+
+              {/* Layout Principal */}
+              <div className="flex gap-6">
+                {/* Sidebar de Navegação */}
+                <NavigationSidebar 
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                />
+
+                {/* Conteúdo Principal */}
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.6 }}
+                  className="flex-1"
+                >
+                  {renderActiveModule()}
+                </motion.div>
+              </div>
+            </div>
+
+            {/* Background Pattern */}
+            <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+              <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-400/5 rounded-full blur-3xl"></div>
+              <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-400/5 rounded-full blur-3xl"></div>
+              <div className="absolute top-3/4 left-1/2 w-64 h-64 bg-purple-400/5 rounded-full blur-3xl"></div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
