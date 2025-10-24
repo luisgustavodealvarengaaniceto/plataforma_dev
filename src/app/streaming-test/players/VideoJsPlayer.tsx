@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
-import 'videojs-flvjs';
 
 interface VideoJsPlayerProps {
   options: any;

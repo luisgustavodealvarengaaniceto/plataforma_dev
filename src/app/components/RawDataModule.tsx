@@ -21,6 +21,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { toast } from 'sonner';
+import io, { Socket } from 'socket.io-client';
 
 interface LogEntry {
   id: string;
@@ -48,6 +49,11 @@ interface RawDataModuleProps {
   activeIMEI?: string;
 }
 
+// Simple UUID-like function for generating IDs
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
 export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [stats, setStats] = useState<LogStats | null>(null);
@@ -58,25 +64,95 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
   const [endDate, setEndDate] = useState('');
   const [limit, setLimit] = useState(50);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [liveMode, setLiveMode] = useState(true);
 
   // Atualizar IMEI selecionado quando prop mudar
   useEffect(() => {
     if (activeIMEI) {
+      console.log(`🆔 activeIMEI prop mudou para: ${activeIMEI}`);
       setSelectedIMEI(activeIMEI);
     }
   }, [activeIMEI]);
 
-  // Carregar dados quando filtros mudarem
+  // Conectar ao Socket.IO e receber dados em tempo real
   useEffect(() => {
-    if (selectedIMEI) {
-      fetchLogs();
-      fetchStats();
-    }
-  }, [selectedIMEI, selectedEndpoint, startDate, endDate, limit]);
+    const newSocket = io('http://localhost:3002', {
+      transports: ['websocket', 'polling'],
+      reconnectionDelay: 1000,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelayMax: 5000,
+    });
+
+    newSocket.on('connect', () => {
+      console.log('✅ Conectado ao servidor em tempo real');
+      toast.success('Conectado aos dados em tempo real');
+    });
+
+    // Escutar eventos de GPS em tempo real
+    newSocket.on('pushgps', (data: any) => {
+      if (liveMode) {
+        const logEntry: LogEntry = {
+          id: generateId(),
+          timestamp: data.timestamp || new Date().toISOString(),
+          endpoint: data.endpoint || '/pushgps',
+          imei: data.imei || selectedIMEI,
+          payload: data.payload || data,
+          payloadSize: JSON.stringify(data.payload || data).length
+        };
+        setLogs(prev => [logEntry, ...prev.slice(0, 49)]); // Manter apenas os últimos 50
+      }
+    });
+
+    // Escutar eventos de alarme em tempo real
+    newSocket.on('pushalarm_raw', (data: any) => {
+      if (liveMode) {
+        const logEntry: LogEntry = {
+          id: generateId(),
+          timestamp: data.timestamp || new Date().toISOString(),
+          endpoint: data.endpoint || '/pushalarm',
+          imei: data.imei || selectedIMEI,
+          payload: data.payload || data,
+          payloadSize: JSON.stringify(data.payload || data).length
+        };
+        setLogs(prev => [logEntry, ...prev.slice(0, 49)]);
+      }
+    });
+
+    // Escutar eventos de upload de arquivo em tempo real
+    newSocket.on('pushfileupload', (data: any) => {
+      if (liveMode) {
+        const logEntry: LogEntry = {
+          id: generateId(),
+          timestamp: data.timestamp || new Date().toISOString(),
+          endpoint: data.endpoint || '/pushfileupload',
+          imei: data.imei || selectedIMEI,
+          payload: data.payload || data,
+          payloadSize: JSON.stringify(data.payload || data).length
+        };
+        setLogs(prev => [logEntry, ...prev.slice(0, 49)]);
+      }
+    });
+
+    newSocket.on('disconnect', () => {
+      console.log('❌ Desconectado do servidor');
+      toast.error('Desconectado do servidor de dados');
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [liveMode, selectedIMEI]);
 
   // Buscar logs
   const fetchLogs = async () => {
-    if (!selectedIMEI) return;
+    if (!selectedIMEI) {
+      console.warn('❌ selectedIMEI vazio, ignorando fetchLogs');
+      return;
+    }
     
     setLoading(true);
     try {
@@ -88,15 +164,23 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
 
-      const response = await fetch(`http://localhost:3002/api/device/${selectedIMEI}/logs?${params}`);
+      const url = `http://localhost:3002/api/device/${selectedIMEI}/logs?${params}`;
+      console.log(`📥 Fazendo requisição para: ${url}`);
+      
+      const response = await fetch(url);
+      console.log(`📊 Resposta recebida: ${response.status}`);
+      
       if (response.ok) {
         const result = await response.json();
+        console.log(`✅ Logs carregados: ${result.data?.logs?.length || 0} registros`);
         setLogs(result.data?.logs || []);
       } else {
-        throw new Error('Erro ao carregar logs');
+        const errorText = await response.text();
+        console.error(`❌ Erro na resposta: ${response.status} - ${errorText}`);
+        throw new Error(`Erro ao carregar logs: ${response.status}`);
       }
     } catch (error) {
-      console.error('Erro ao carregar logs:', error);
+      console.error('❌ Erro ao carregar logs:', error);
       toast.error('Erro ao carregar dados brutos');
     } finally {
       setLoading(false);
@@ -117,6 +201,24 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
       console.error('Erro ao carregar estatísticas:', error);
     }
   };
+
+  // Carregar dados iniciais quando o componente monta
+  useEffect(() => {
+    console.log(`🎯 RawDataModule montado com selectedIMEI: ${selectedIMEI}`);
+    if (selectedIMEI) {
+      fetchLogs();
+      fetchStats();
+    }
+  }, []); // Executar apenas uma vez ao montar
+
+  // Carregar dados quando filtros mudarem OU quando selectedIMEI muda
+  useEffect(() => {
+    if (selectedIMEI) {
+      console.log(`🔄 Carregando logs para IMEI: ${selectedIMEI}`);
+      fetchLogs();
+      fetchStats();
+    }
+  }, [selectedIMEI, selectedEndpoint, startDate, endDate, limit]);
 
   // Limpar filtros
   const clearFilters = () => {
@@ -177,9 +279,23 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
           <h2 className="text-2xl font-bold text-white">Dados Brutos</h2>
           <p className="text-gray-400 mt-1">
             Visualize todos os dados recebidos dos dispositivos
+            {liveMode && <span className="ml-2 inline-flex items-center gap-1 text-green-400">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+              Em Tempo Real
+            </span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <motion.button
+            onClick={() => setLiveMode(!liveMode)}
+            className={`${liveMode ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-600 hover:bg-gray-700'} text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors`}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            title={liveMode ? 'Alternar para modo histórico' : 'Alternar para modo em tempo real'}
+          >
+            <Activity className="w-4 h-4" />
+            {liveMode ? 'Ao Vivo' : 'Histórico'}
+          </motion.button>
           <motion.button
             onClick={exportData}
             disabled={logs.length === 0}
@@ -192,10 +308,10 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
           </motion.button>
           <motion.button
             onClick={fetchLogs}
-            disabled={loading}
+            disabled={loading || liveMode}
             className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            whileHover={{ scale: !loading ? 1.02 : 1 }}
-            whileTap={{ scale: !loading ? 0.98 : 1 }}
+            whileHover={{ scale: !loading && !liveMode ? 1.02 : 1 }}
+            whileTap={{ scale: !loading && !liveMode ? 0.98 : 1 }}
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Atualizar

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
+import ErrorNotifications from "@/components/ErrorNotifications";
 import "./globals.css";
 
 const inter = Inter({
@@ -29,6 +30,7 @@ export default function RootLayout({
       </head>
       <body className="font-inter antialiased bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50">
         {children}
+        <ErrorNotifications />
         <Toaster 
           position="top-right"
           toastOptions={{
