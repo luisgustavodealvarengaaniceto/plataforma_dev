@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Database, 
@@ -66,17 +66,27 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [liveMode, setLiveMode] = useState(true);
+  const socketInitialized = useRef(false); // Flag para evitar múltiplas conexões
 
   // Atualizar IMEI selecionado quando prop mudar
   useEffect(() => {
-    if (activeIMEI) {
-      console.log(`🆔 activeIMEI prop mudou para: ${activeIMEI}`);
+    if (activeIMEI && activeIMEI !== selectedIMEI) {
+      console.log(`🆔 IMEI atualizado: ${activeIMEI}`);
       setSelectedIMEI(activeIMEI);
     }
   }, [activeIMEI]);
 
-  // Conectar ao Socket.IO e receber dados em tempo real
+  // Conectar ao Socket.IO e receber dados em tempo real (apenas uma vez)
   useEffect(() => {
+    // Evitar múltiplas conexões em React Strict Mode (development)
+    if (socketInitialized.current) {
+      console.log('⏭️ Socket já inicializado, pulando reconexão');
+      return;
+    }
+
+    socketInitialized.current = true;
+    console.log('🔌 Inicializando conexão WebSocket...');
+
     const newSocket = io('http://localhost:3002', {
       transports: ['websocket', 'polling'],
       reconnectionDelay: 1000,
@@ -97,7 +107,7 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
           id: generateId(),
           timestamp: data.timestamp || new Date().toISOString(),
           endpoint: data.endpoint || '/pushgps',
-          imei: data.imei || selectedIMEI,
+          imei: data.imei,
           payload: data.payload || data,
           payloadSize: JSON.stringify(data.payload || data).length
         };
@@ -112,7 +122,7 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
           id: generateId(),
           timestamp: data.timestamp || new Date().toISOString(),
           endpoint: data.endpoint || '/pushalarm',
-          imei: data.imei || selectedIMEI,
+          imei: data.imei,
           payload: data.payload || data,
           payloadSize: JSON.stringify(data.payload || data).length
         };
@@ -127,7 +137,7 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
           id: generateId(),
           timestamp: data.timestamp || new Date().toISOString(),
           endpoint: data.endpoint || '/pushfileupload',
-          imei: data.imei || selectedIMEI,
+          imei: data.imei,
           payload: data.payload || data,
           payloadSize: JSON.stringify(data.payload || data).length
         };
@@ -143,9 +153,14 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
     setSocket(newSocket);
 
     return () => {
-      newSocket.disconnect();
+      // Só desconectar quando o componente for REALMENTE desmontado (não no Strict Mode remount)
+      console.log('🔌 Cleanup: desmontando componente');
+      socketInitialized.current = false;
+      if (newSocket.connected) {
+        newSocket.disconnect();
+      }
     };
-  }, [liveMode, selectedIMEI]);
+  }, []); // ⚠️ Sem dependências para executar apenas uma vez
 
   // Buscar logs
   const fetchLogs = async () => {
@@ -165,14 +180,17 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
       if (endDate) params.append('endDate', endDate);
 
       const url = `http://localhost:3002/api/device/${selectedIMEI}/logs?${params}`;
-      console.log(`📥 Fazendo requisição para: ${url}`);
+      // console.log(`📥 Fazendo requisição para: ${url}`); // Comentado para reduzir logs
       
       const response = await fetch(url);
-      console.log(`📊 Resposta recebida: ${response.status}`);
+      // console.log(`📊 Resposta recebida: ${response.status}`); // Comentado para reduzir logs
       
       if (response.ok) {
         const result = await response.json();
-        console.log(`✅ Logs carregados: ${result.data?.logs?.length || 0} registros`);
+        const logCount = result.data?.logs?.length || 0;
+        if (logCount > 0) {
+          console.log(`✅ Logs carregados: ${logCount} registros`);
+        }
         setLogs(result.data?.logs || []);
       } else {
         const errorText = await response.text();
@@ -202,23 +220,14 @@ export default function RawDataModule({ activeIMEI }: RawDataModuleProps) {
     }
   };
 
-  // Carregar dados iniciais quando o componente monta
+  // Carregar dados quando selectedIMEI ou filtros mudarem
   useEffect(() => {
-    console.log(`🎯 RawDataModule montado com selectedIMEI: ${selectedIMEI}`);
     if (selectedIMEI) {
+      // console.log(`🔄 Carregando logs para IMEI: ${selectedIMEI}`); // Reduzido para diminuir logs
       fetchLogs();
       fetchStats();
     }
-  }, []); // Executar apenas uma vez ao montar
-
-  // Carregar dados quando filtros mudarem OU quando selectedIMEI muda
-  useEffect(() => {
-    if (selectedIMEI) {
-      console.log(`🔄 Carregando logs para IMEI: ${selectedIMEI}`);
-      fetchLogs();
-      fetchStats();
-    }
-  }, [selectedIMEI, selectedEndpoint, startDate, endDate, limit]);
+  }, [selectedIMEI, selectedEndpoint, startDate, endDate, limit]); // Consolidado em um único useEffect
 
   // Limpar filtros
   const clearFilters = () => {

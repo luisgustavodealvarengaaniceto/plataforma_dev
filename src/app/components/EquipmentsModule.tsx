@@ -33,6 +33,7 @@ interface Equipment {
   status: 'online' | 'offline' | 'unknown';
   isActive: boolean;
   lastSeen?: string;
+  protocolType?: 'JIMI' | 'JTT';
   channels: Array<{
     number: number;
     name: string;
@@ -56,7 +57,8 @@ export default function EquipmentsModule({ onEquipmentActivated }: EquipmentsMod
     description: '',
     vehicleModel: '',
     licensePlate: '',
-    location: ''
+    location: '',
+    protocolType: 'JIMI' as 'JIMI' | 'JTT'
   });
 
   // Carregar equipamentos
@@ -92,7 +94,8 @@ export default function EquipmentsModule({ onEquipmentActivated }: EquipmentsMod
       description: '',
       vehicleModel: '',
       licensePlate: '',
-      location: ''
+      location: '',
+      protocolType: 'JIMI'
     });
     setShowAddForm(false);
     setEditingEquipment(null);
@@ -189,7 +192,8 @@ export default function EquipmentsModule({ onEquipmentActivated }: EquipmentsMod
       description: equipment.description || '',
       vehicleModel: equipment.vehicleModel || '',
       licensePlate: equipment.licensePlate || '',
-      location: equipment.location || ''
+      location: equipment.location || '',
+      protocolType: equipment.protocolType || 'JIMI'
     });
     setEditingEquipment(equipment);
     setShowAddForm(true);
@@ -274,7 +278,16 @@ export default function EquipmentsModule({ onEquipmentActivated }: EquipmentsMod
                 <div className="flex items-center gap-3">
                   <div className={`w-3 h-3 rounded-full ${getStatusColor(equipment.status)}`}></div>
                   <div>
-                    <h3 className="text-lg font-semibold text-white">{equipment.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold text-white">{equipment.name}</h3>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                        equipment.protocolType === 'JTT' 
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                          : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                      }`}>
+                        {equipment.protocolType || 'JIMI'}
+                      </span>
+                    </div>
                     <p className="text-sm text-gray-400">IMEI: {equipment.imei}</p>
                   </div>
                 </div>
@@ -420,6 +433,48 @@ export default function EquipmentsModule({ onEquipmentActivated }: EquipmentsMod
                     placeholder="Ex: Ônibus Linha 001"
                     required
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Protocolo de Streaming *
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, protocolType: 'JIMI' })}
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        formData.protocolType === 'JIMI'
+                          ? 'border-blue-500 bg-blue-500/20 text-white'
+                          : 'border-gray-600 bg-gray-700/50 text-gray-400 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <div className="font-semibold text-lg">JIMI</div>
+                        <div className="text-xs mt-1 opacity-80">JC400, JC261</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, protocolType: 'JTT' })}
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        formData.protocolType === 'JTT'
+                          ? 'border-green-500 bg-green-500/20 text-white'
+                          : 'border-gray-600 bg-gray-700/50 text-gray-400 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <div className="font-semibold text-lg">JT/T</div>
+                        <div className="text-xs mt-1 opacity-80">JC450, JC181, JC371</div>
+                      </div>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {formData.protocolType === 'JIMI' 
+                      ? '📹 Protocolo JIMI usa comandos de texto (proNo 128)'
+                      : '📹 Protocolo JT/T usa comandos JSON específicos'
+                    }
+                  </p>
                 </div>
 
                 <div>
